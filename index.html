@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbet1du Secure Chat - Fixed</title>
+    <style>
+        /* جميع التنسيقات (CSS) السابقة كما هي */
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #111b21; margin: 0; display: flex; justify-content: center; height: 100vh; color: #e9edef; overflow: hidden; }
+        .auth-screen { position: fixed; inset: 0; background: #075e54; z-index: 9999; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+        .auth-screen input { padding: 15px; border-radius: 25px; border: none; width: 280px; text-align: center; font-size: 16px; outline: none; }
+        .btn-auth { padding: 12px 40px; border-radius: 25px; border: none; cursor: pointer; font-weight: bold; background: #25d366; color: white; }
+        .chat-container { width: 100%; max-width: 500px; height: 100%; background: #0b141a; display: flex; flex-direction: column; position: relative; }
+        #announcement-bar { padding: 10px; text-align: center; font-weight: bold; font-size: 14px; display: none; transition: 0.3s; color: white; }
+        .chat-nav { display: flex; background: #202c33; border-bottom: 1px solid #3b4a54; flex-shrink: 0; }
+        .nav-item { flex: 1; padding: 15px; text-align: center; cursor: pointer; font-weight: bold; color: #8696a0; position: relative; }
+        .nav-item.active { color: #00a884; border-bottom: 3px solid #00a884; background: #2a3942; }
+        .chat-box { flex: 1; padding: 15px; overflow-y: auto; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); background-color: #0b141a; display: flex; flex-direction: column; gap: 10px; }
+        .message { padding: 10px; border-radius: 12px; max-width: 75%; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
+        .sent { background: #005c4b; align-self: flex-start; border-top-left-radius: 0; }
+        .received { background: #202c33; align-self: flex-end; border-top-right-radius: 0; }
+        .user-tag { font-size: 11px; font-weight: bold; color: #ffbc38; display: block; margin-bottom: 4px; }
+        .chat-input { display: flex; padding: 10px; background: #202c33; gap: 8px; transition: 0.3s; }
+        .chat-input input { flex: 1; padding: 12px; border-radius: 25px; border: none; background: #2a3942; color: white; outline: none; }
+        .send-btn { background: #00a884; color: #111b21; width: 45px; height: 45px; border-radius: 50%; border: none; cursor: pointer; font-size: 20px; }
+        #lock-msg { display: none; text-align: center; padding: 15px; background: #3b0000; color: #ff4d4d; font-weight: bold; }
+        #users-list { display: none; flex: 1; overflow-y: auto; padding: 10px; background: #111b21; }
+        .user-card { display: flex; align-items: center; padding: 12px; background: #202c33; margin-bottom: 8px; border-radius: 10px; cursor: pointer; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" class="auth-screen">
+        <h1 style="color:white;">Xbet1du Chat</h1>
+        <input type="text" id="userInputName" placeholder="أدخل اسمك المستعار...">
+        <button onclick="login()" class="btn-auth">دخول</button>
+        <p id="errorMsg" style="color:#ffbc38; font-size: 13px;"></p>
+    </div>
+
+    <div class="chat-container">
+        <div id="announcement-bar"></div>
+        <div class="chat-nav">
+            <div class="nav-item active" id="navGlobal" onclick="showGlobal()">المجموعة</div>
+            <div class="nav-item" id="navPrivate" onclick="showUsersList()">الخاص</div>
+            <div class="nav-item" onclick="logout()" style="color:#ff4d4d;">خروج</div>
+        </div>
+        <div id="users-list"></div>
+        <div id="chatBox" class="chat-box"></div>
+        <div id="lock-msg">🔒 الشات مغلق حالياً بواسطة الإدارة</div>
+        <div class="chat-input" id="inputArea">
+            <input type="text" id="msgInput" placeholder="اكتب رسالة...">
+            <button class="send-btn" onclick="sendMsg()">➤</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, getDoc, doc, setDoc, where, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBAI2JtYFEjD73qh46XRBK6eFsLzgXB9rA",
+            authDomain: "sjsj-c0dfa.firebaseapp.com",
+            projectId: "sjsj-c0dfa",
+            storageBucket: "sjsj-c0dfa.firebasestorage.app",
+            messagingSenderId: "126155421282",
+            appId: "1:126155421282:web:0654138ff119c012b5433b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        let myUser = localStorage.getItem('chat_user') || "";
+        let currentMode = "global";
+        let currentPartner = "";
+        let unsub = null;
+
+        // التحقق من الحظر والدخول
+        async function checkAccess() {
+            if (myUser) {
+                const ban = await getDoc(doc(db, "banned_users", myUser));
+                if (ban.exists()) {
+                    alert("أنت محظور من دخول الشات!");
+                    logout();
+                    return;
+                }
+                document.getElementById('login-screen').style.display = 'none';
+                startApp();
+            } else {
+                document.getElementById('login-screen').style.display = 'flex';
+            }
+        }
+
+        function startApp() {
+            listenToAdminSettings();
+            showGlobal();
+            setDoc(doc(db, "online_users", myUser), { lastSeen: serverTimestamp() }, { merge: true });
+        }
+
+        window.login = () => {
+            const name = document.getElementById('userInputName').value.trim();
+            if(name) {
+                localStorage.setItem('chat_user', name);
+                myUser = name;
+                location.reload();
+            }
+        };
+
+        window.logout = () => { localStorage.removeItem('chat_user'); location.reload(); };
+
+        function listenToAdminSettings() {
+            onSnapshot(doc(db, "settings", "announcement"), (d) => {
+                const bar = document.getElementById('announcement-bar');
+                if(d.exists() && d.data().text) {
+                    bar.textContent = d.data().text;
+                    bar.style.backgroundColor = d.data().color;
+                    bar.style.display = 'block';
+                } else { bar.style.display = 'none'; }
+            });
+            onSnapshot(doc(db, "settings", "chat_lock"), (d) => {
+                const locked = d.exists() ? d.data().locked : false;
+                document.getElementById('inputArea').style.display = locked ? 'none' : 'flex';
+                document.getElementById('lock-msg').style.display = locked ? 'block' : 'none';
+            });
+        }
+
+        window.showGlobal = () => {
+            currentMode = "global";
+            switchView('chat');
+            listen(query(collection(db, "messages"), orderBy("time", "asc"), limit(100)));
+        };
+
+        window.showUsersList = () => {
+            currentMode = "list";
+            switchView('list');
+            onSnapshot(collection(db, "online_users"), (snap) => {
+                const list = document.getElementById('users-list');
+                list.innerHTML = "<h3>المتصلين الآن</h3>";
+                snap.forEach(d => {
+                    if(d.id !== myUser) {
+                        const div = document.createElement('div');
+                        div.className = 'user-card';
+                        div.innerHTML = `<img src="https://ui-avatars.com/api/?name=${d.id}&background=random" style="width:30px; border-radius:50%"> ${d.id}`;
+                        div.onclick = () => startPrivate(d.id);
+                        list.appendChild(div);
+                    }
+                });
+            });
+        };
+
+        function startPrivate(p) {
+            currentMode = "private";
+            currentPartner = p;
+            switchView('chat');
+            // استعلام آمن للخاص: يجلب فقط الرسائل بين الطرفين
+            const q = query(
+                collection(db, "private_messages"),
+                orderBy("time", "asc")
+            );
+            listen(q);
+        }
+
+        function switchView(v) {
+            document.getElementById('chatBox').style.display = v === 'chat' ? 'flex' : 'none';
+            document.getElementById('inputArea').style.display = v === 'chat' ? 'flex' : 'none';
+            document.getElementById('users-list').style.display = v === 'list' ? 'block' : 'none';
+            document.getElementById('navGlobal').className = currentMode === 'global' ? 'nav-item active' : 'nav-item';
+            document.getElementById('navPrivate').className = (currentMode === 'private' || currentMode === 'list') ? 'nav-item active' : 'nav-item';
+        }
+
+        function listen(q) {
+            if(unsub) unsub();
+            unsub = onSnapshot(q, (snap) => {
+                const box = document.getElementById('chatBox');
+                box.innerHTML = "";
+                snap.forEach(documentDoc => {
+                    const d = documentDoc.data();
+                    // فلترة إضافية للخاص لزيادة الأمان
+                    if(currentMode === "private") {
+                        if(!((d.sender === myUser && d.receiver === currentPartner) || (d.sender === currentPartner && d.receiver === myUser))) return;
+                    }
+                    const isMe = d.sender === myUser;
+                    box.innerHTML += `<div class="message ${isMe ? 'sent' : 'received'}"><span class="user-tag">${d.sender}</span>${d.msg}</div>`;
+                });
+                box.scrollTop = box.scrollHeight;
+            });
+        }
+
+        window.sendMsg = async () => {
+            const inp = document.getElementById('msgInput');
+            const val = inp.value.trim();
+            if(!val) return;
+            const col = currentMode === "global" ? "messages" : "private_messages";
+            const data = { msg: val, sender: myUser, time: serverTimestamp() };
+            if(currentMode === "private") data.receiver = currentPartner;
+            
+            inp.value = ""; // مسح الحقل فوراً لتجربة أسرع
+            await addDoc(collection(db, col), data);
+        };
+
+        checkAccess();
+    </script>
+</body>
+</html>

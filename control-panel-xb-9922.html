@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbet1du Pro Admin</title>
+    <style>
+        :root { --primary: #00a884; --danger: #ff4d4d; --bg: #0b141a; --card: #202c33; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: white; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--card); padding-bottom: 15px; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { background: var(--card); padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #3b4a54; }
+        .stat-card h4 { margin: 0; color: #8696a0; }
+        .stat-card p { font-size: 24px; font-weight: bold; margin: 10px 0 0; color: var(--primary); }
+
+        .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .section { background: var(--card); padding: 20px; border-radius: 12px; height: 500px; display: flex; flex-direction: column; }
+        .list-container { flex: 1; overflow-y: auto; margin-top: 15px; }
+
+        .item-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #2a3942; border-radius: 8px; margin-bottom: 8px; }
+        
+        input, textarea { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #2a3942; color: white; margin-bottom: 10px; outline: none; }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        
+        @media (max-width: 768px) { .main-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>لوحة القيادة - Xbet1du</h1>
+        <button class="btn btn-danger" onclick="location.reload()">تحديث البيانات</button>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card"><h4>المتصلين الآن</h4><p id="online-count">0</p></div>
+        <div class="stat-card"><h4>إجمالي الرسائل</h4><p id="msg-count">0</p></div>
+        <div class="stat-card"><h4>المحظورين</h4><p id="ban-count">0</p></div>
+    </div>
+
+    <div class="section" style="height: auto; margin-bottom: 20px;">
+        <h3>📢 إرسال إعلان مثبت</h3>
+        <textarea id="announcementText" placeholder="اكتب الرسالة التي ستظهر للجميع في الأعلى..."></textarea>
+        <button class="btn btn-primary" onclick="postAnnouncement()">تثبيت الإعلان</button>
+    </div>
+
+    <div class="main-grid">
+        <div class="section">
+            <h3>💬 مراقبة الشات العام</h3>
+            <div class="list-container" id="recent-messages"></div>
+            <button class="btn btn-danger" style="margin-top:10px" onclick="clearAllMessages()">تفريغ الشات كاملاً</button>
+        </div>
+
+        <div class="section">
+            <h3>👥 المستخدمين النشطين</h3>
+            <div class="list-container" id="active-users"></div>
+            <h3>🚫 قائمة الحظر</h3>
+            <div class="list-container" id="banned-users"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, writeBatch, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBAI2JtYFEjD73qh46XRBK6eFsLzgXB9rA",
+            authDomain: "sjsj-c0dfa.firebaseapp.com",
+            projectId: "sjsj-c0dfa",
+            storageBucket: "sjsj-c0dfa.firebasestorage.app",
+            messagingSenderId: "126155421282",
+            appId: "1:126155421282:web:0654138ff119c012b5433b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // 1. مراقبة الرسائل وحذف الفردي
+        onSnapshot(query(collection(db, "messages"), orderBy("time", "desc"), limit(50)), (snap) => {
+            const container = document.getElementById('recent-messages');
+            document.getElementById('msg-count').innerText = snap.size;
+            container.innerHTML = "";
+            snap.forEach(d => {
+                const data = d.data();
+                container.innerHTML += `
+                    <div class="item-row">
+                        <span style="font-size:13px"><b>${data.sender}:</b> ${data.msg.substring(0,30)}...</span>
+                        <button class="btn-danger" style="padding:4px 8px; font-size:10px;" onclick="deleteSingleMsg('${d.id}')">حذف</button>
+                    </div>`;
+            });
+        });
+
+        // 2. إدارة المستخدمين والحظر
+        onSnapshot(collection(db, "online_users"), (snap) => {
+            const container = document.getElementById('active-users');
+            document.getElementById('online-count').innerText = snap.size;
+            container.innerHTML = "";
+            snap.forEach(d => {
+                container.innerHTML += `<div class="item-row"><span>${d.id}</span> <button class="btn-danger" onclick="banUser('${d.id}')">حظر</button></div>`;
+            });
+        });
+
+        onSnapshot(collection(db, "banned_users"), (snap) => {
+            const container = document.getElementById('banned-users');
+            document.getElementById('ban-count').innerText = snap.size;
+            container.innerHTML = "";
+            snap.forEach(d => {
+                container.innerHTML += `<div class="item-row"><span>${d.id}</span> <button class="btn-primary" onclick="unbanUser('${d.id}')">فك حظر</button></div>`;
+            });
+        });
+
+        // الوظائف
+        window.deleteSingleMsg = async (id) => { await deleteDoc(doc(db, "messages", id)); };
+
+        window.banUser = async (name) => {
+            await setDoc(doc(db, "banned_users", name), { date: new Date() });
+            alert("تم حظر " + name);
+        };
+
+        window.unbanUser = async (name) => { await deleteDoc(doc(db, "banned_users", name)); };
+
+        window.postAnnouncement = async () => {
+            const txt = document.getElementById('announcementText').value;
+            await setDoc(doc(db, "settings", "announcement"), { text: txt, time: new Date() });
+            alert("تم تثبيت الإعلان!");
+        };
+
+        window.clearAllMessages = async () => {
+            if(confirm("سيتم حذف كل شيء! هل أنت متأكد؟")) {
+                const q = await getDocs(collection(db, "messages"));
+                const batch = writeBatch(db);
+                q.forEach(d => batch.delete(d.ref));
+                await batch.commit();
+            }
+        };
+    </script>
+</body>
+</html>
